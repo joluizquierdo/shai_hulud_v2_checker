@@ -1,6 +1,6 @@
 mod models;
 
-use models::json_lock::JsonLockPackages;
+use models::json_lock::{JsonLockPackages, PackageVulnerableRecord};
 use std::{
     fs,
     path::Path,
@@ -8,6 +8,7 @@ use std::{
 };
 
 const JSON_LOCK_FILE: &str = "examples/package-lock.json";
+const AFFECTED_PACKAGES_URL: &str = "https://github.com/wiz-sec-public/wiz-research-iocs/raw/refs/heads/main/reports/shai-hulud-2-packages.csv";
 
 fn main() {
     if !is_npm_installed() {
@@ -24,7 +25,14 @@ fn main() {
         npm_packages.packages.len()
     );
 
-    // println!("Parsed NPM Packages: {:#?}", npm_packages);
+    let affected_packages = download_list_of_affected_packages();
+
+    println!(
+        "Downloaded list of affected packages succesfully! Found {} packages",
+        affected_packages.len()
+    );
+
+    print!("{:#?}", affected_packages);
 }
 
 fn parse_npm_json(path: &Path) -> JsonLockPackages {
@@ -46,4 +54,52 @@ fn parse_npm_json(path: &Path) -> JsonLockPackages {
 
 fn is_npm_installed() -> bool {
     Command::new("npm").arg("--version").output().is_ok()
+}
+
+fn download_list_of_affected_packages() -> Vec<PackageVulnerableRecord> {
+    let url = AFFECTED_PACKAGES_URL;
+    let mut response = match ureq::get(url).call() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!(
+                "Failed to download from url '{}' the list of affected packages. Detailed error: \n{}",
+                url, e
+            );
+            process::exit(1);
+        }
+    };
+    let response_status = response.status().as_u16();
+    let response_body = response.body_mut();
+
+    if response_status != 200 {
+        let error_text = response_body.read_to_string().unwrap_or(String::from(
+            "Couldn't transform http content to text sorry...",
+        ));
+        eprintln!(
+            "Failed to download from url '{}' the list of affected packages. HTTP Status: {}, HTTP content {}",
+            url,
+            response.status(),
+            error_text
+        );
+        process::exit(1);
+    }
+
+    let response_text = match response_body.read_to_string() {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!(
+                "Failed to decode response text from url '{}' . Detailed error: \n{}",
+                url, e
+            );
+            process::exit(1);
+        }
+    };
+
+    println!("Downloaded affected packages data successfully, parsing CSV...");
+
+    let mut csv_reader = csv::ReaderBuilder::new().from_reader(response_text.as_bytes());
+    csv_reader
+        .deserialize()
+        .collect::<Result<Vec<PackageVulnerableRecord>, _>>()
+        .expect("Can't parse csv file!")
 }
