@@ -1,5 +1,9 @@
+mod models;
+
+use models::json_lock::JsonLockPackages;
 use std::{fs, path::Path, process};
-const JSON_LOCK_FILE: &str = "package-lock.json";
+
+const JSON_LOCK_FILE: &str = "examples/package-lock.json";
 
 fn main() {
     //TODO: read JSON from CLI arg or default to JSON_LOCK_FILE
@@ -16,5 +20,14 @@ fn main() {
         path.to_string_lossy()
     );
 
-    // let json_str = fs::read_to_string();
+    let json_lock_content = fs::read_to_string(path).expect("Failed to read json lock file");
+    let npm_packages: JsonLockPackages =
+        serde_json::from_str(&json_lock_content).expect("Failed to parse JSON");
+
+    println!(
+        "Packages lock Json processed succesfully! Found {} packages",
+        npm_packages.packages.len()
+    );
+
+    // println!("Parsed NPM Packages: {:#?}", npm_packages);
 }
