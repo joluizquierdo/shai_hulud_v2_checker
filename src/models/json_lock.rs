@@ -4,6 +4,13 @@ use regex::Regex;
 use serde::{Deserialize, Deserializer};
 
 #[derive(Debug, Deserialize)]
+pub struct PackageView {
+    #[serde(rename(deserialize = "_id"))]
+    pub id: String,
+    pub time: HashMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct JsonLockPackages {
     #[serde(deserialize_with = "clean_version_name")]
     pub packages: HashMap<String, PackageInfo>,
@@ -69,11 +76,17 @@ where
 
         let mut value = hash_map.remove(&k).expect("Failed to remove the entry");
         if corrected_map.contains_key(&clean_key) {
+            let value_version = value.version.pop().unwrap();
+            let corrected_versions = &corrected_map.get(&clean_key).unwrap().version;
+            if corrected_versions.contains(&value_version) {
+                continue;
+            }
+
             corrected_map
                 .get_mut(&clean_key)
                 .unwrap()
                 .version
-                .push(value.version.pop().unwrap());
+                .push(value_version);
             continue;
         }
         corrected_map.insert(clean_key, value);
