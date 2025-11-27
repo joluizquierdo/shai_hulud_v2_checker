@@ -22,7 +22,7 @@ impl JsonLockPackages {
     }
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, Clone)]
 pub struct PackageInfo {
     #[serde(deserialize_with = "to_vec")]
     pub version: Vec<String>,

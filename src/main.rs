@@ -1,5 +1,6 @@
 mod models;
 
+use async_lock::Mutex;
 use chrono::{DateTime, Utc};
 use models::json_lock::{JsonLockPackages, PackageView, PackageVulnerableRecord};
 use std::{
@@ -7,6 +8,7 @@ use std::{
     fs,
     path::Path,
     process::{self, Command},
+    sync::Arc,
 };
 
 const JSON_LOCK_FILE: &str = "examples/package-lock.json";
@@ -36,7 +38,8 @@ fn main() {
     );
 
     let vulnerable_packages = check_vulnerable_packages(&affected_packages, &mut npm_packages);
-    let possibly_vulnerable_packages = check_possible_vulnerable_packages(&mut npm_packages);
+    let possibly_vulnerable_packages =
+        smol::block_on(check_possible_vulnerable_packages(&mut npm_packages));
 
     let vulnerable_packages_count = vulnerable_packages.packages.len();
     let possibly_vulnerable_packages_count = possibly_vulnerable_packages.packages.len();
@@ -86,76 +89,112 @@ fn main() {
     }
 }
 
-fn check_possible_vulnerable_packages(packages: &mut JsonLockPackages) -> JsonLockPackages {
+async fn check_possible_vulnerable_packages(packages: &mut JsonLockPackages) -> JsonLockPackages {
     let attack_datetime: DateTime<Utc> = ATTACK_DATE.parse().expect("Failed to parse attack date");
-    let mut possibly_vulnerable_packages = JsonLockPackages::new();
-    let package_keys = packages
-        .packages
-        .keys()
-        .map(|k| k.to_string())
-        .collect::<Vec<_>>();
-    for k in package_keys.iter() {
-        println!("\n----------------------------------------");
-        println!("🔎 Checking possible vulnerable package '{}'", k);
-        let mut maybe_vulnerable = false;
-        let package_info = packages.packages.get_mut(k).unwrap();
-        let package_view = match get_npm_package_view(k) {
-            Some(pv) => pv,
-            None => {
-                println!(
-                    "\t⚠️  Could not retrieve npm view for package '{}', skipping possible vulnerability check.",
-                    k
-                );
-                packages
-                    .packages
-                    .get_mut(k)
-                    .expect("Package should exist")
-                    .skipped_scan = true;
-                continue;
-            }
-        };
+    let possibly_vulnerable = Arc::new(Mutex::new(JsonLockPackages::new()));
+    let packages_arc = Arc::new(Mutex::new(HashMap::new()));
 
-        for ver in package_info.version.iter() {
-            let version_created = package_view.time.get(ver);
-            let version_created = match version_created {
-                Some(vc) => vc,
+    // Move packages out to avoid borrow issues
+    let mut temp_packages = HashMap::new();
+    std::mem::swap(&mut packages.packages, &mut temp_packages);
+    *packages_arc.lock().await = temp_packages;
+
+    let package_keys: Vec<String> = packages_arc.lock().await.keys().cloned().collect();
+
+    // Create a semaphore to limit concurrent tasks to 10
+    let semaphore = Arc::new(async_lock::Semaphore::new(5));
+
+    let mut tasks = Vec::new();
+
+    for k in package_keys {
+        let packages_clone = Arc::clone(&packages_arc);
+        let possibly_vulnerable_clone = Arc::clone(&possibly_vulnerable);
+        let semaphore_clone = Arc::clone(&semaphore);
+        let package_name = k.clone();
+
+        let task = smol::spawn(async move {
+            let _permit = semaphore_clone.acquire().await;
+
+            println!("\n----------------------------------------");
+            println!("🔎 Checking possible vulnerable package '{}'", package_name);
+
+            let package_view = match get_npm_package_view(&package_name).await {
+                Some(pv) => pv,
                 None => {
                     println!(
-                        "\t⚠️  Could not find creation time for version '{}' of package '{}', skipping this version.",
-                        ver, k
+                        "\t⚠️  Could not retrieve npm view for package '{}', skipping possible vulnerability check.",
+                        package_name
                     );
-                    continue;
+                    let mut pkgs = packages_clone.lock().await;
+                    if let Some(pkg_info) = pkgs.get_mut(&package_name) {
+                        pkg_info.skipped_scan = true;
+                    }
+                    return;
                 }
             };
-            let version_created_datetime: DateTime<Utc> = version_created
-                .parse()
-                .expect("Failed to parse version time");
 
-            if version_created_datetime > attack_datetime {
-                println!(
-                    "\t❗ Version '{}' of package '{}' was published on '{}' after the attack date ({}), it may be vulnerable.",
-                    ver, k, version_created, ATTACK_DATE
-                );
+            let mut maybe_vulnerable = false;
 
-                maybe_vulnerable = true;
-                break;
-            } else {
-                println!(
-                    "\t✅ Version '{}' of package '{}' was published on '{}' before the attack date ({}), it is not vulnerable.",
-                    ver, k, version_created, ATTACK_DATE
-                );
+            let package_info = {
+                let pkgs = packages_clone.lock().await;
+                pkgs.get(&package_name).cloned()
+            };
+
+            if let Some(package_info) = package_info {
+                for ver in package_info.version.iter() {
+                    let version_created = package_view.time.get(ver);
+                    let version_created = match version_created {
+                        Some(vc) => vc,
+                        None => {
+                            println!(
+                                "\t⚠️  Could not find creation time for version '{}' of package '{}', skipping this version.",
+                                ver, package_name
+                            );
+                            continue;
+                        }
+                    };
+
+                    let version_created_datetime: DateTime<Utc> = version_created
+                        .parse()
+                        .expect("Failed to parse version time");
+
+                    if version_created_datetime > attack_datetime {
+                        println!(
+                            "\t❗ Version '{}' of package '{}' was published on '{}' after the attack date ({}), it may be vulnerable.",
+                            ver, package_name, version_created, ATTACK_DATE
+                        );
+                        maybe_vulnerable = true;
+                        break;
+                    } else {
+                        println!(
+                            "\t✅ Version '{}' of package '{}' was published on '{}' before the attack date ({}), it is not vulnerable.",
+                            ver, package_name, version_created, ATTACK_DATE
+                        );
+                    }
+                }
+
+                if maybe_vulnerable {
+                    let mut pkgs = packages_clone.lock().await;
+                    if let Some(value) = pkgs.remove(&package_name) {
+                        let mut vuln_pkgs = possibly_vulnerable_clone.lock().await;
+                        vuln_pkgs.packages.insert(package_name.clone(), value);
+                    }
+                }
             }
-        }
+        });
 
-        if maybe_vulnerable {
-            let value = packages.packages.remove(k).expect("Package should exist");
-            possibly_vulnerable_packages
-                .packages
-                .insert(k.to_string(), value);
-        }
+        tasks.push(task);
     }
 
-    possibly_vulnerable_packages
+    // Wait for all tasks to complete
+    for task in tasks {
+        task.await;
+    }
+
+    // Restore packages (minus the vulnerable ones)
+    packages.packages = Arc::try_unwrap(packages_arc).unwrap().into_inner();
+
+    Arc::try_unwrap(possibly_vulnerable).unwrap().into_inner()
 }
 
 fn check_vulnerable_packages(
@@ -266,21 +305,19 @@ fn download_list_of_affected_packages() -> HashMap<String, Vec<String>> {
         .collect()
 }
 
-fn get_npm_package_view(package_name: &str) -> Option<PackageView> {
-    let output = Command::new("npm")
+async fn get_npm_package_view(package_name: &str) -> Option<PackageView> {
+    let output = smol::process::Command::new("npm")
         .arg("view")
         .arg(package_name)
         .arg("--json")
         .output()
-        .expect("Failed to execute npm command");
+        .await
+        .ok()?;
 
     if !output.status.success() {
         return None;
     }
 
     let info = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let package_view: PackageView =
-        serde_json::from_str(&info).expect("Failing parsing npm view output");
-
-    Some(package_view)
+    serde_json::from_str(&info).ok()
 }
