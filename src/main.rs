@@ -10,6 +10,7 @@ use std::{
 
 const JSON_LOCK_FILE: &str = "examples/package-lock.json";
 const AFFECTED_PACKAGES_URL: &str = "https://github.com/wiz-sec-public/wiz-research-iocs/raw/refs/heads/main/reports/shai-hulud-2-packages.csv";
+const ATTACK_DATE: &str = "2024-11-21";
 
 fn main() {
     if !is_npm_installed() {
@@ -19,19 +20,77 @@ fn main() {
 
     //TODO: read JSON from CLI arg or default to JSON_LOCK_FILE
     let path = Path::new(JSON_LOCK_FILE);
-    let npm_packages = parse_npm_json(path);
+    let mut npm_packages = parse_npm_json(path);
 
     println!(
-        "Packages lock Json processed succesfully! Found {} packages",
+        "🔄 Packages lock Json processed succesfully!\n\t🔎 Found {} installed packages",
         npm_packages.packages.len()
     );
 
     let affected_packages = download_list_of_affected_packages();
 
     println!(
-        "Downloaded list of affected packages succesfully! Found {} vulnerable packages",
+        "⏬ List of affected packages Downloaded! \n\t🔎 Found {} vulnerable 🦠 packages",
         affected_packages.len()
     );
+
+    let vulnerable_packages = check_vulnerable_packages(&affected_packages, &mut npm_packages);
+
+    let vulnerable_packages_count = vulnerable_packages.packages.len();
+
+    println!("\n🔚 Scan completed!");
+    if vulnerable_packages_count == 0 {
+        println!("✅ No vulnerable packages found!");
+    } else {
+        println!(
+            "❗ Total vulnerable packages found: {}",
+            vulnerable_packages_count
+        );
+
+        for vuln_package in vulnerable_packages.packages.keys() {
+            println!("\t- {}", vuln_package);
+        }
+    }
+}
+
+fn check_vulnerable_packages(
+    vulnerabilities: &HashMap<String, Vec<String>>,
+    packages: &mut JsonLockPackages,
+) -> JsonLockPackages {
+    let mut vulnerable_packages = JsonLockPackages::new();
+    let mut vulnerable_found = 0;
+    for (vuln_package, vuln_versions) in vulnerabilities.iter() {
+        println!("\n----------------------------------------");
+        println!("🔎 Checking package '{}'", vuln_package);
+        if let Some(installed_package) = packages.packages.get(vuln_package) {
+            println!("⚠️  Vulnerable package found: '{}'", vuln_package);
+            for installed_version in installed_package.version.iter() {
+                println!("\t🔍 Installed version found: '{}'", installed_version);
+                if vuln_versions.iter().any(|v| v == installed_version) {
+                    println!(
+                        "\t❗ Version '{}' of package '{}' is VULNERABLE!",
+                        installed_version, vuln_package
+                    );
+                    vulnerable_found += 1;
+                }
+            }
+
+            let vulnerable_package = packages
+                .packages
+                .remove(vuln_package)
+                .expect("Package should exist");
+            vulnerable_packages
+                .packages
+                .insert(vuln_package.clone(), vulnerable_package);
+        } else {
+            println!(
+                "✅ Package '{}' not found among installed packages",
+                vuln_package
+            );
+        }
+    }
+
+    vulnerable_packages
 }
 
 fn parse_npm_json(path: &Path) -> JsonLockPackages {

@@ -9,6 +9,14 @@ pub struct JsonLockPackages {
     pub packages: HashMap<String, PackageInfo>,
 }
 
+impl JsonLockPackages {
+    pub fn new() -> Self {
+        JsonLockPackages {
+            packages: HashMap::new(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct PackageInfo {
     #[serde(deserialize_with = "to_vec")]
