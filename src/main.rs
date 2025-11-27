@@ -2,6 +2,7 @@ mod models;
 
 use models::json_lock::{JsonLockPackages, PackageVulnerableRecord};
 use std::{
+    collections::HashMap,
     fs,
     path::Path,
     process::{self, Command},
@@ -28,11 +29,9 @@ fn main() {
     let affected_packages = download_list_of_affected_packages();
 
     println!(
-        "Downloaded list of affected packages succesfully! Found {} packages",
+        "Downloaded list of affected packages succesfully! Found {} vulnerable packages",
         affected_packages.len()
     );
-
-    print!("{:#?}", affected_packages);
 }
 
 fn parse_npm_json(path: &Path) -> JsonLockPackages {
@@ -56,7 +55,7 @@ fn is_npm_installed() -> bool {
     Command::new("npm").arg("--version").output().is_ok()
 }
 
-fn download_list_of_affected_packages() -> Vec<PackageVulnerableRecord> {
+fn download_list_of_affected_packages() -> HashMap<String, Vec<String>> {
     let url = AFFECTED_PACKAGES_URL;
     let mut response = match ureq::get(url).call() {
         Ok(r) => r,
@@ -95,11 +94,12 @@ fn download_list_of_affected_packages() -> Vec<PackageVulnerableRecord> {
         }
     };
 
-    println!("Downloaded affected packages data successfully, parsing CSV...");
-
     let mut csv_reader = csv::ReaderBuilder::new().from_reader(response_text.as_bytes());
     csv_reader
         .deserialize()
         .collect::<Result<Vec<PackageVulnerableRecord>, _>>()
         .expect("Can't parse csv file!")
+        .into_iter()
+        .map(|r| (r.package, r.version))
+        .collect()
 }
