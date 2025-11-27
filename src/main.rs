@@ -40,6 +40,12 @@ fn main() {
 
     let vulnerable_packages_count = vulnerable_packages.packages.len();
     let possibly_vulnerable_packages_count = possibly_vulnerable_packages.packages.len();
+    let skipped_packages: Vec<_> = possibly_vulnerable_packages
+        .packages
+        .iter()
+        .filter(|(_, v)| v.skipped_scan)
+        .collect();
+    let skipped_packages_count = skipped_packages.len();
 
     println!("\n🔚 Scan completed!");
     if vulnerable_packages_count == 0 {
@@ -67,6 +73,17 @@ fn main() {
             println!("\t- {}", possible_vuln_package);
         }
     }
+
+    if skipped_packages_count > 0 {
+        println!(
+            "⚠️  Total packages skipped during possible vulnerability check: {}",
+            skipped_packages_count
+        );
+
+        for (skipped_package_name, _) in skipped_packages {
+            println!("\t- {}", skipped_package_name);
+        }
+    }
 }
 
 fn check_possible_vulnerable_packages(packages: &mut JsonLockPackages) -> JsonLockPackages {
@@ -89,6 +106,11 @@ fn check_possible_vulnerable_packages(packages: &mut JsonLockPackages) -> JsonLo
                     "\t⚠️  Could not retrieve npm view for package '{}', skipping possible vulnerability check.",
                     k
                 );
+                packages
+                    .packages
+                    .get_mut(k)
+                    .expect("Package should exist")
+                    .skipped_scan = true;
                 continue;
             }
         };

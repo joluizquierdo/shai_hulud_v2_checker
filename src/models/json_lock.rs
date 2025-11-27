@@ -5,8 +5,6 @@ use serde::{Deserialize, Deserializer};
 
 #[derive(Debug, Deserialize)]
 pub struct PackageView {
-    #[serde(rename(deserialize = "_id"))]
-    pub id: String,
     pub time: HashMap<String, String>,
 }
 
@@ -24,10 +22,13 @@ impl JsonLockPackages {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct PackageInfo {
     #[serde(deserialize_with = "to_vec")]
     pub version: Vec<String>,
+
+    #[serde(default)]
+    pub skipped_scan: bool,
 }
 
 #[derive(Debug, Deserialize)]
