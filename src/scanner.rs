@@ -17,6 +17,7 @@ pub async fn check_possible_vulnerable_packages(
 
     // Create a semaphore to limit concurrent tasks to 5
     let semaphore = Arc::new(async_lock::Semaphore::new(5));
+    let buffer_lock = Arc::new(Mutex::new(()));
 
     let mut tasks = Vec::new();
 
@@ -24,27 +25,41 @@ pub async fn check_possible_vulnerable_packages(
         let packages_clone = Arc::clone(&packages_arc);
         let possibly_vulnerable_clone = Arc::clone(&possibly_vulnerable);
         let semaphore_clone = Arc::clone(&semaphore);
+        let buffer_lock_clone = Arc::clone(&buffer_lock);
 
         let task = smol::spawn(async move {
+            let mut output = String::new();
             let _permit = semaphore_clone.acquire().await;
 
-            println!("\n----------------------------------------");
-            println!("🔎 Checking possible vulnerable package '{}'", pkg_key);
+            output.push_str("\n----------------------------------------\n");
+            output.push_str(&format!(
+                "🔎 Checking possible vulnerable package '{}'\n",
+                pkg_key
+            ));
 
             let package_view = match get_npm_package_view(&pkg_key).await {
                 Some(pv) => pv,
                 None => {
-                    println!(
-                        "\t⚠️  Could not retrieve npm view for package '{}', skipping possible vulnerability check.",
+                    output.push_str(&format!(
+                        "\t⚠️  Could not retrieve npm view for package '{}', skipping possible vulnerability check.\n",
                         pkg_key
-                    );
+                    ));
                     let mut pkgs = packages_clone.lock().await;
                     if let Some(pkg_info) = pkgs.get_mut(&pkg_key) {
                         pkg_info.skipped_scan = true;
                     }
+
+                    // Print before returning
+                    let _buffer_guard = buffer_lock_clone.lock().await;
+                    print!("{}", output);
                     return;
                 }
             };
+
+            output.push_str(&format!(
+                "\t📦 Retrieved npm view for package '{}', checking versions...\n",
+                pkg_key
+            ));
 
             let mut maybe_vulnerable = false;
 
@@ -59,10 +74,10 @@ pub async fn check_possible_vulnerable_packages(
                     let version_created = match version_created {
                         Some(vc) => vc,
                         None => {
-                            println!(
-                                "\t⚠️  Could not find creation time for version '{}' of package '{}', skipping this version.",
+                            output.push_str(&format!(
+                                "\t⚠️  Could not find creation time for version '{}' of package '{}', skipping this version.\n",
                                 ver, pkg_key
-                            );
+                            ));
                             continue;
                         }
                     };
@@ -72,17 +87,17 @@ pub async fn check_possible_vulnerable_packages(
                         .expect("Failed to parse version time");
 
                     if version_created_datetime > attack_datetime {
-                        println!(
-                            "\t❗ Version '{}' of package '{}' was published on '{}' after the attack date ({}), it may be vulnerable.",
+                        output.push_str(&format!(
+                            "\t❗ Version '{}' of package '{}' was published on '{}' after the attack date ({}), it may be vulnerable.\n",
                             ver, pkg_key, version_created, ATTACK_DATE
-                        );
+                        ));
                         maybe_vulnerable = true;
                         break;
                     } else {
-                        println!(
-                            "\t✅ Version '{}' of package '{}' was published on '{}' before the attack date ({}), it is not vulnerable.",
+                        output.push_str(&format!(
+                            "\t✅ Version '{}' of package '{}' was published on '{}' before the attack date ({}), it is not vulnerable.\n",
                             ver, pkg_key, version_created, ATTACK_DATE
-                        );
+                        ));
                     }
                 }
 
@@ -94,6 +109,9 @@ pub async fn check_possible_vulnerable_packages(
                     }
                 }
             }
+
+            let _buffer_guard = buffer_lock_clone.lock().await;
+            print!("{}", output);
         });
 
         tasks.push(task);

@@ -2,6 +2,10 @@ use crate::models::package::PackageView;
 use std::process::Command;
 
 pub async fn get_npm_package_view(package_name: &str) -> Option<PackageView> {
+    if package_name.is_empty() {
+        return None;
+    }
+
     let output = smol::process::Command::new("npm")
         .arg("view")
         .arg(package_name)
