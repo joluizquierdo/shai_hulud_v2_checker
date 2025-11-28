@@ -1,45 +1,9 @@
-use std::collections::HashMap;
-
+use super::package::PackageInfo;
 use regex::Regex;
 use serde::{Deserialize, Deserializer};
+use std::collections::HashMap;
 
-#[derive(Debug, Deserialize)]
-pub struct PackageView {
-    pub time: HashMap<String, String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct JsonLockPackages {
-    #[serde(deserialize_with = "clean_version_name")]
-    pub packages: HashMap<String, PackageInfo>,
-}
-
-impl JsonLockPackages {
-    pub fn new() -> Self {
-        JsonLockPackages {
-            packages: HashMap::new(),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Default, Clone)]
-pub struct PackageInfo {
-    #[serde(deserialize_with = "to_vec")]
-    pub version: Vec<String>,
-
-    #[serde(default)]
-    pub skipped_scan: bool,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PackageVulnerableRecord {
-    #[serde(rename(deserialize = "Package"))]
-    pub package: String,
-    #[serde(rename(deserialize = "Version"), deserialize_with = "split_versions")]
-    pub version: Vec<String>,
-}
-
-fn split_versions<'a, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+pub fn split_versions<'a, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
     D: Deserializer<'a>,
 {
@@ -52,7 +16,7 @@ where
     Ok(versions)
 }
 
-fn clean_version_name<'a, D>(deserializer: D) -> Result<HashMap<String, PackageInfo>, D::Error>
+pub fn clean_version_name<'a, D>(deserializer: D) -> Result<HashMap<String, PackageInfo>, D::Error>
 where
     D: Deserializer<'a>,
 {
@@ -96,7 +60,7 @@ where
     Ok(corrected_map)
 }
 
-fn to_vec<'a, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+pub fn to_vec<'a, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
     D: Deserializer<'a>,
 {
