@@ -1,11 +1,51 @@
+//! Vulnerability scanning logic.
+//!
+//! This module implements two types of vulnerability checks:
+//! 1. Known vulnerabilities - matching against a curated list of affected packages
+//! 2. Possible vulnerabilities - checking if packages were published after the attack date
+
 use crate::models::package::NpmLockPackages;
 use crate::npm::get_npm_package_view;
 use async_lock::Mutex;
 use chrono::{DateTime, Utc};
 use std::{collections::HashMap, sync::Arc};
 
+/// The timestamp when the Shai Hulud V2 attack was detected
 const ATTACK_DATE: &str = "2025-11-24T03:16:26.000Z";
 
+/// Checks packages for possible vulnerabilities based on publication date.
+///
+/// This function performs concurrent scans of all installed packages, checking if any
+/// versions were published after the Shai Hulud V2 attack date. Packages published
+/// after this date are flagged as potentially vulnerable and require manual review.
+///
+/// The function uses async concurrency with a semaphore limiting to 5 concurrent
+/// tasks to avoid overwhelming the NPM registry or the local system.
+///
+/// # Arguments
+/// * `packages` - The complete list of installed packages to scan
+///
+/// # Returns
+/// A tuple containing:
+/// * `NpmLockPackages` - Packages that were not flagged as possibly vulnerable
+/// * `NpmLockPackages` - Packages that may be vulnerable (published after attack date)
+///
+/// # Behavior
+/// - Packages that cannot be queried via NPM are marked with `skipped_scan = true`
+/// - For each package, all installed versions are checked against their publish dates
+/// - If any version was published after the attack date, the entire package is flagged
+/// - Progress is printed to stdout for each package checked
+///
+/// # Examples
+/// ```no_run
+/// use shai_hulud_v2_checker::scanner::check_possible_vulnerable_packages;
+/// use shai_hulud_v2_checker::models::package::NpmLockPackages;
+///
+/// # async fn example(packages: NpmLockPackages) {
+/// let (safe, vulnerable) = check_possible_vulnerable_packages(packages).await;
+/// println!("Possibly vulnerable: {}", vulnerable.packages.len());
+/// # }
+/// ```
 pub async fn check_possible_vulnerable_packages(
     packages: NpmLockPackages,
 ) -> (NpmLockPackages, NpmLockPackages) {
@@ -131,6 +171,39 @@ pub async fn check_possible_vulnerable_packages(
     (remaining_packages, vulnerable_packages)
 }
 
+/// Checks installed packages against a list of known vulnerabilities.
+///
+/// This function compares installed packages with a curated list of packages and
+/// versions known to be affected by the Shai Hulud V2 attack. It performs exact
+/// matching on both package names and version numbers.
+///
+/// # Arguments
+/// * `vulnerabilities` - HashMap of known vulnerable packages to their affected versions
+/// * `packages` - The complete list of installed packages to check
+///
+/// # Returns
+/// A tuple containing:
+/// * `NpmLockPackages` - Packages that are not in the vulnerability list
+/// * `NpmLockPackages` - Packages confirmed to be vulnerable
+///
+/// # Behavior
+/// - Only packages present in both lists are flagged as vulnerable
+/// - Version matching is exact (e.g., "1.2.3" must match exactly)
+/// - Progress and findings are printed to stdout
+/// - Vulnerable packages are removed from the input list and added to the output list
+///
+/// # Examples
+/// ```no_run
+/// use std::collections::HashMap;
+/// use shai_hulud_v2_checker::scanner::check_vulnerable_packages;
+/// use shai_hulud_v2_checker::models::package::NpmLockPackages;
+///
+/// let mut vulnerabilities = HashMap::new();
+/// vulnerabilities.insert("bad-package".to_string(), vec!["1.0.0".to_string()]);
+///
+/// # let packages = NpmLockPackages::new();
+/// let (safe, vulnerable) = check_vulnerable_packages(&vulnerabilities, packages);
+/// ```
 pub fn check_vulnerable_packages(
     vulnerabilities: &HashMap<String, Vec<String>>,
     mut packages: NpmLockPackages,

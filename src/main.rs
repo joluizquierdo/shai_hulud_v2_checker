@@ -1,3 +1,10 @@
+//! Shai Hulud V2 Vulnerability Checker
+//!
+//! This tool scans NPM package-lock.json files to detect packages affected by the
+//! Shai Hulud V2 supply chain attack. It performs two types of checks:
+//! 1. Known vulnerable packages from a curated list
+//! 2. Possible vulnerabilities based on package publish dates after the attack
+
 mod models;
 mod network;
 mod npm;
@@ -10,8 +17,18 @@ use parser::parse_npm_json;
 use scanner::{check_possible_vulnerable_packages, check_vulnerable_packages};
 use std::{path::Path, process};
 
+/// Default path to the package-lock.json file to scan
 const JSON_LOCK_FILE: &str = "examples/package-lock.json";
 
+/// Main entry point for the Shai Hulud V2 vulnerability checker.
+///
+/// This function orchestrates the vulnerability scanning process:
+/// 1. Verifies NPM is installed
+/// 2. Parses the package-lock.json file
+/// 3. Downloads the list of known affected packages
+/// 4. Checks for known vulnerabilities
+/// 5. Checks for possible vulnerabilities based on publish dates
+/// 6. Reports all findings to the user
 fn main() {
     if !is_npm_installed() {
         eprintln!("NPM is not installed or not found in PATH. Please install NPM to proceed.");
