@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 use std::{collections::HashMap, sync::Arc};
 
 /// The timestamp when the Shai Hulud V2 attack was detected
-const ATTACK_DATE: &str = "2025-11-24T03:16:26.000Z";
+const ATTACK_DATE: &str = "2025-11-24T01:00:00.000Z";
 
 /// Checks packages for possible vulnerabilities based on publication date.
 ///
