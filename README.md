@@ -1,6 +1,12 @@
 # Shai-Hulud V2 Attack Checker
 
-A fast vulnerability scanner that detects npm packages compromised in the Shai-Hulud V2 supply chain attack.
+A vulnerability scanner that detects npm packages compromised in the Shai-Hulud V2 supply chain attack.
+
+> [!NOTE]
+> I'm learning rust, so I wrote this tool in Rust.
+> Do not expect production-level code quality.
+> Feel free to contribute or suggest improvements!
+> Thanks!
 
 ## Overview
 
@@ -12,6 +18,8 @@ This tool analyzes `package-lock.json` files to identify potentially compromised
 ## About the Attack
 
 The Shai-Hulud V2 attack used stolen npm and GitHub tokens to republish legitimate packages with malicious code injected into install scripts (preinstall, postinstall hooks). When these packages are installed, malicious scripts execute automatically, exfiltrating secrets, tokens, and sensitive information from local machines and CI/CD environments.
+
+More info: [shai-hulud-2-0-ongoing-supply-chain-attack](https://www.wiz.io/blog/shai-hulud-2-0-ongoing-supply-chain-attack)
 
 **Attack Window:** Nov 24, 2025 - Present
 
@@ -78,7 +86,6 @@ shai_hulud_v2_checker -t 10
 3. **Monitor for Suspicious Activity** - Check logs and audit trails for:
    - Unauthorized access to repositories
    - Unexpected package publishes
-   - Unusual API calls
 
 4. **No Lock File?** - If you don't use `package-lock.json`:
    - You are at high risk if packages were installed during the attack window
@@ -94,4 +101,5 @@ shai_hulud_v2_checker -t 10
 
   ```bash
   npm config set ignore-scripts true
+  npm ci
   ```
