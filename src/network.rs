@@ -51,6 +51,11 @@ pub fn download_list_of_affected_packages() -> HashMap<String, Vec<String>> {
     let response_status = response.status().as_u16();
     let response_body = response.body_mut();
 
+    println!(
+        "⏳ Downloading the list of affected packages from '{}' ...",
+        url
+    );
+
     if response_status != 200 {
         let error_text = response_body.read_to_string().unwrap_or(String::from(
             "Couldn't transform http content to text sorry...",

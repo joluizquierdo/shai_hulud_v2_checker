@@ -44,6 +44,10 @@ fn main() {
     let npm_packages = parse_npm_json(&lock_file_path);
 
     println!(
+        "🔧 Using {} concurrent threads for npm view commands",
+        args.threads_num
+    );
+    println!(
         "🔄 Packages lock Json processed succesfully!\n\t🔎 Found {} installed packages",
         npm_packages.packages.len()
     );
@@ -60,9 +64,9 @@ fn main() {
         check_vulnerable_packages(&affected_packages, npm_packages);
 
     // Second check: possible vulnerabilities based on publish date
-    println!("🔧 Using {} concurrent threads for npm view commands", args.threads_num);
-    let (_remaining_packages, possibly_vulnerable_packages) =
-        smol::block_on(check_possible_vulnerable_packages(npm_packages, args.threads_num));
+    let (_remaining_packages, possibly_vulnerable_packages) = smol::block_on(
+        check_possible_vulnerable_packages(npm_packages, args.threads_num),
+    );
 
     let vulnerable_packages_count = vulnerable_packages.packages.len();
     let possibly_vulnerable_packages_count = possibly_vulnerable_packages.packages.len();
