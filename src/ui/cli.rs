@@ -32,16 +32,16 @@ pub struct Args {
 /// - npm-shrinkwrap.json
 fn find_npm_lock_file() -> Option<PathBuf> {
     let current_dir = env::current_dir().ok()?;
-    
+
     let lock_file_names = ["package-lock.json", "npm-shrinkwrap.json"];
-    
+
     for name in &lock_file_names {
         let lock_file_path = current_dir.join(name);
         if lock_file_path.exists() && lock_file_path.is_file() {
             return Some(lock_file_path);
         }
     }
-    
+
     None
 }
 
@@ -68,7 +68,10 @@ pub fn resolve_lock_file_path(args: &Args) -> PathBuf {
     if let Some(ref file_path) = args.json_lock_file {
         let path = PathBuf::from(file_path);
         if !path.exists() {
-            eprintln!("Error: The specified lock file '{}' does not exist.", file_path);
+            eprintln!(
+                "Error: The specified lock file '{}' does not exist.",
+                file_path
+            );
             process::exit(1);
         }
         println!("📂 Using lock file: {}", path.display());
@@ -82,7 +85,9 @@ pub fn resolve_lock_file_path(args: &Args) -> PathBuf {
             None => {
                 eprintln!("Error: No npm lock file found in the current directory.");
                 eprintln!("Please specify a lock file path using -f/--json-lock-file option,");
-                eprintln!("or run the command from a directory containing package-lock.json or npm-shrinkwrap.json.");
+                eprintln!(
+                    "or run the command from a directory containing package-lock.json or npm-shrinkwrap.json."
+                );
                 process::exit(1);
             }
         }

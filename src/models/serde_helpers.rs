@@ -40,7 +40,7 @@ where
 /// Deserializes and cleans package names from package-lock.json node_modules paths.
 ///
 /// This function transforms the "packages" field from package-lock.json, which uses
-/// full node_modules paths as keys (e.g., "node_modules/express" or 
+/// full node_modules paths as keys (e.g., "node_modules/express" or
 /// "node_modules/@babel/core"), into a clean HashMap with just the package names.
 ///
 /// # Transformation
