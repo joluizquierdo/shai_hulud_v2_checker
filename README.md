@@ -1,43 +1,97 @@
-# SHAI-HULUD V2 ATTACK CHECKER
+# Shai-Hulud V2 Attack Checker
 
-This tool read a package-lock.json file, extracts all the packages and their versions and make two checks:
+A fast vulnerability scanner that detects npm packages compromised in the Shai-Hulud V2 supply chain attack.
 
-- Check if the installed package and version is in the known list of compromised packages, and will report those packages as vulnerabilities.
-- Using `npm view <package_name>` under the hood, check when your packages were installed and compare with the known attack window (2025-05-24 until now). And will report those packages as potentially vulnerable.
+## Overview
 
-## List of affected packages
+This tool analyzes `package-lock.json` files to identify potentially compromised packages through two detection methods:
 
-Special thanks to Wiz Research for discovering and reporting this vulnerability and
-keeping the community informed. The [report can be found here](https://github.com/wiz-sec-public/wiz-research-iocs/blob/main/reports/shai-hulud-2-packages.csv).
+1. **Known Vulnerabilities** - Checks against a curated list of confirmed compromised packages
+2. **Temporal Analysis** - Identifies packages published or updated during the attack window (Nov 24, 2025 onwards) using `npm view` metadata
 
-## How the Attack Works
+## About the Attack
 
-The malware uses stolen npm and GitHub tokens to republish legitimate packages with malicious code injected into install scripts (like preinstall hooks).
+The Shai-Hulud V2 attack used stolen npm and GitHub tokens to republish legitimate packages with malicious code injected into install scripts (preinstall, postinstall hooks). When these packages are installed, malicious scripts execute automatically, exfiltrating secrets, tokens, and sensitive information from local machines and CI/CD environments.
 
-When you install or update such a package, the malicious script executes, potentially exfiltrating secrets, tokens, and other sensitive information from your machine or CI/CD environment.
+**Attack Window:** Nov 24, 2025 - Present
+
+Special thanks to [Wiz Research](https://github.com/wiz-sec-public/wiz-research-iocs/blob/main/reports/shai-hulud-2-packages.csv) for documenting this vulnerability.
+
+## Installation
+
+### Pre-built Binaries
+
+Download pre-built binaries for your platform from [GitHub Releases](https://github.com/ficemu5/shai_hulud_v2_checker/releases):
+
+- macOS ARM64
+- Linux x64
+- Windows x64
+
+### Build from Source
+
+**Prerequisites:** Rust toolchain and npm installed
+
+```bash
+cargo build --release
+```
+
+Binary location: `target/release/shai_hulud_v2_checker`
 
 ## Usage
 
-## What You Should Do
-
-Run the tool against all your project's package-lock.json files
-
-Immediately check if any packages you've installed or updated since the attack window are on the list of compromised packages or potentailly compromised.
-If by any change you get a positive result, take the following actions:
-
-Rotate all access tokens (GitHub, npm, cloud providers, etc.) that were stored on any affected machine, as these may have been stolen. Think that even agents/runner used in CI/CD pipelines could be compromised.
-
-Clear your npm cache (npm cache clean --force), remove node_modules, and reinstall your dependencies to avoid reinfection.
-
-Monitor for unusual activity in your accounts and repositories.
-If you are not using package-lock.json, and you build your applications there's a high you are affected. Plese create a package-lock.json and pin all the package versions date to an inferior date to the attack window and once you've done it follow the steps above.
-
-## Additional Security Measures
-
-Use lock files (package-lock.json) to pin versions and avoid automatic updates to potentially compromised versions.
-Regularly audit your dependencies and remove unused ones to minimize your attack surface
-in CICD environemnts, consider the usage of the command
-
 ```bash
-npm config set ignore-scripts true
+# Scan package-lock.json in current directory
+shai_hulud_v2_checker
+
+# Scan a specific lock file
+shai_hulud_v2_checker -f /path/to/package-lock.json
+
+# Use custom number of threads (default: 5)
+shai_hulud_v2_checker -t 10
 ```
+
+### Options
+
+- `-f, --json-lock-file <PATH>` - Path to package-lock.json file (defaults to current directory)
+- `-t, --threads-num <NUM>` - Number of threads for npm view commands (default: 5)
+- `-h, --help` - Print help information
+- `-V, --version` - Print version information
+
+## Response Steps
+
+### If Vulnerabilities Are Detected
+
+1. **Rotate All Credentials** - Immediately rotate tokens and secrets that were accessible on affected systems:
+   - GitHub personal access tokens
+   - npm tokens
+   - Cloud provider credentials (AWS, GCP, Azure)
+   - CI/CD pipeline secrets and service accounts
+
+2. **Clean and Reinstall**
+
+   ```bash
+   npm cache clean --force
+   rm -rf node_modules
+   npm install
+   ```
+
+3. **Monitor for Suspicious Activity** - Check logs and audit trails for:
+   - Unauthorized access to repositories
+   - Unexpected package publishes
+   - Unusual API calls
+
+4. **No Lock File?** - If you don't use `package-lock.json`:
+   - You are at high risk if packages were installed during the attack window
+   - Generate a lock file immediately: `npm install --package-lock-only`
+   - Pin all package versions to dates before Nov 24, 2025
+   - Run this tool to verify your dependency tree
+
+### Prevention
+
+- **Use Lock Files** - Always commit `package-lock.json` to version control
+- **Audit Dependencies** - Regularly review and remove unused packages
+- **Disable Install Scripts in CI/CD**
+
+  ```bash
+  npm config set ignore-scripts true
+  ```
