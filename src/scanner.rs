@@ -19,11 +19,12 @@ const ATTACK_DATE: &str = "2025-11-24T03:16:26.000Z";
 /// versions were published after the Shai Hulud V2 attack date. Packages published
 /// after this date are flagged as potentially vulnerable and require manual review.
 ///
-/// The function uses async concurrency with a semaphore limiting to 5 concurrent
+/// The function uses async concurrency with a semaphore limiting concurrent
 /// tasks to avoid overwhelming the NPM registry or the local system.
 ///
 /// # Arguments
 /// * `packages` - The complete list of installed packages to scan
+/// * `max_concurrent` - Maximum number of concurrent npm view tasks (default: 5)
 ///
 /// # Returns
 /// A tuple containing:
@@ -42,12 +43,13 @@ const ATTACK_DATE: &str = "2025-11-24T03:16:26.000Z";
 /// use shai_hulud_v2_checker::models::package::NpmLockPackages;
 ///
 /// # async fn example(packages: NpmLockPackages) {
-/// let (safe, vulnerable) = check_possible_vulnerable_packages(packages).await;
+/// let (safe, vulnerable) = check_possible_vulnerable_packages(packages, 5).await;
 /// println!("Possibly vulnerable: {}", vulnerable.packages.len());
 /// # }
 /// ```
 pub async fn check_possible_vulnerable_packages(
     packages: NpmLockPackages,
+    max_concurrent: usize,
 ) -> (NpmLockPackages, NpmLockPackages) {
     let attack_datetime: DateTime<Utc> = ATTACK_DATE.parse().expect("Failed to parse attack date");
     let possibly_vulnerable = Arc::new(Mutex::new(NpmLockPackages::new()));
@@ -55,8 +57,8 @@ pub async fn check_possible_vulnerable_packages(
 
     let package_keys: Vec<String> = packages_arc.lock().await.keys().cloned().collect();
 
-    // Create a semaphore to limit concurrent tasks to 5
-    let semaphore = Arc::new(async_lock::Semaphore::new(5));
+    // Create a semaphore to limit concurrent tasks
+    let semaphore = Arc::new(async_lock::Semaphore::new(max_concurrent));
     let buffer_lock = Arc::new(Mutex::new(()));
 
     let mut tasks = Vec::new();

@@ -10,34 +10,38 @@ mod network;
 mod npm;
 mod parser;
 mod scanner;
+mod ui;
 
+use clap::Parser;
 use network::download_list_of_affected_packages;
 use npm::is_npm_installed;
 use parser::parse_npm_json;
 use scanner::{check_possible_vulnerable_packages, check_vulnerable_packages};
-use std::{path::Path, process};
-
-/// Default path to the package-lock.json file to scan
-const JSON_LOCK_FILE: &str = "examples/package-lock.json";
+use std::process;
+use ui::cli::{Args, resolve_lock_file_path};
 
 /// Main entry point for the Shai Hulud V2 vulnerability checker.
 ///
 /// This function orchestrates the vulnerability scanning process:
-/// 1. Verifies NPM is installed
-/// 2. Parses the package-lock.json file
-/// 3. Downloads the list of known affected packages
-/// 4. Checks for known vulnerabilities
-/// 5. Checks for possible vulnerabilities based on publish dates
-/// 6. Reports all findings to the user
+/// 1. Parses CLI arguments
+/// 2. Verifies NPM is installed
+/// 3. Determines which package-lock.json file to scan
+/// 4. Parses the package-lock.json file
+/// 5. Downloads the list of known affected packages
+/// 6. Checks for known vulnerabilities
+/// 7. Checks for possible vulnerabilities based on publish dates
+/// 8. Reports all findings to the user
 fn main() {
+    let args = Args::parse();
+
     if !is_npm_installed() {
         eprintln!("NPM is not installed or not found in PATH. Please install NPM to proceed.");
         process::exit(1);
     }
 
-    //TODO: read JSON from CLI arg or default to JSON_LOCK_FILE
-    let path = Path::new(JSON_LOCK_FILE);
-    let npm_packages = parse_npm_json(path);
+    // Resolve lock file path from CLI arguments or auto-discovery
+    let lock_file_path = resolve_lock_file_path(&args);
+    let npm_packages = parse_npm_json(&lock_file_path);
 
     println!(
         "🔄 Packages lock Json processed succesfully!\n\t🔎 Found {} installed packages",
@@ -56,8 +60,9 @@ fn main() {
         check_vulnerable_packages(&affected_packages, npm_packages);
 
     // Second check: possible vulnerabilities based on publish date
+    println!("🔧 Using {} concurrent threads for npm view commands", args.threads_num);
     let (_remaining_packages, possibly_vulnerable_packages) =
-        smol::block_on(check_possible_vulnerable_packages(npm_packages));
+        smol::block_on(check_possible_vulnerable_packages(npm_packages, args.threads_num));
 
     let vulnerable_packages_count = vulnerable_packages.packages.len();
     let possibly_vulnerable_packages_count = possibly_vulnerable_packages.packages.len();
