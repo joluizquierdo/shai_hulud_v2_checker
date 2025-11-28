@@ -20,7 +20,7 @@ fn main() {
 
     //TODO: read JSON from CLI arg or default to JSON_LOCK_FILE
     let path = Path::new(JSON_LOCK_FILE);
-    let mut npm_packages = parse_npm_json(path);
+    let npm_packages = parse_npm_json(path);
 
     println!(
         "🔄 Packages lock Json processed succesfully!\n\t🔎 Found {} installed packages",
@@ -34,9 +34,13 @@ fn main() {
         affected_packages.len()
     );
 
-    let vulnerable_packages = check_vulnerable_packages(&affected_packages, &mut npm_packages);
-    let possibly_vulnerable_packages =
-        smol::block_on(check_possible_vulnerable_packages(&mut npm_packages));
+    // First check: known vulnerabilities
+    let (npm_packages, vulnerable_packages) =
+        check_vulnerable_packages(&affected_packages, npm_packages);
+
+    // Second check: possible vulnerabilities based on publish date
+    let (_remaining_packages, possibly_vulnerable_packages) =
+        smol::block_on(check_possible_vulnerable_packages(npm_packages));
 
     let vulnerable_packages_count = vulnerable_packages.packages.len();
     let possibly_vulnerable_packages_count = possibly_vulnerable_packages.packages.len();

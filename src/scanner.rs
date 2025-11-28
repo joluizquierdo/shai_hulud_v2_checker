@@ -7,16 +7,11 @@ use std::{collections::HashMap, sync::Arc};
 const ATTACK_DATE: &str = "2025-11-24T03:16:26.000Z";
 
 pub async fn check_possible_vulnerable_packages(
-    packages: &mut NpmLockPackages,
-) -> NpmLockPackages {
+    packages: NpmLockPackages,
+) -> (NpmLockPackages, NpmLockPackages) {
     let attack_datetime: DateTime<Utc> = ATTACK_DATE.parse().expect("Failed to parse attack date");
     let possibly_vulnerable = Arc::new(Mutex::new(NpmLockPackages::new()));
-    let packages_arc = Arc::new(Mutex::new(HashMap::new()));
-
-    // Move packages out to avoid borrow issues
-    let mut temp_packages = HashMap::new();
-    std::mem::swap(&mut packages.packages, &mut temp_packages);
-    *packages_arc.lock().await = temp_packages;
+    let packages_arc = Arc::new(Mutex::new(packages.packages));
 
     let package_keys: Vec<String> = packages_arc.lock().await.keys().cloned().collect();
 
@@ -25,27 +20,26 @@ pub async fn check_possible_vulnerable_packages(
 
     let mut tasks = Vec::new();
 
-    for k in package_keys {
+    for pkg_key in package_keys {
         let packages_clone = Arc::clone(&packages_arc);
         let possibly_vulnerable_clone = Arc::clone(&possibly_vulnerable);
         let semaphore_clone = Arc::clone(&semaphore);
-        let package_name = k.clone();
 
         let task = smol::spawn(async move {
             let _permit = semaphore_clone.acquire().await;
 
             println!("\n----------------------------------------");
-            println!("🔎 Checking possible vulnerable package '{}'", package_name);
+            println!("🔎 Checking possible vulnerable package '{}'", pkg_key);
 
-            let package_view = match get_npm_package_view(&package_name).await {
+            let package_view = match get_npm_package_view(&pkg_key).await {
                 Some(pv) => pv,
                 None => {
                     println!(
                         "\t⚠️  Could not retrieve npm view for package '{}', skipping possible vulnerability check.",
-                        package_name
+                        pkg_key
                     );
                     let mut pkgs = packages_clone.lock().await;
-                    if let Some(pkg_info) = pkgs.get_mut(&package_name) {
+                    if let Some(pkg_info) = pkgs.get_mut(&pkg_key) {
                         pkg_info.skipped_scan = true;
                     }
                     return;
@@ -56,7 +50,7 @@ pub async fn check_possible_vulnerable_packages(
 
             let package_info = {
                 let pkgs = packages_clone.lock().await;
-                pkgs.get(&package_name).cloned()
+                pkgs.get(&pkg_key).cloned()
             };
 
             if let Some(package_info) = package_info {
@@ -67,7 +61,7 @@ pub async fn check_possible_vulnerable_packages(
                         None => {
                             println!(
                                 "\t⚠️  Could not find creation time for version '{}' of package '{}', skipping this version.",
-                                ver, package_name
+                                ver, pkg_key
                             );
                             continue;
                         }
@@ -80,23 +74,23 @@ pub async fn check_possible_vulnerable_packages(
                     if version_created_datetime > attack_datetime {
                         println!(
                             "\t❗ Version '{}' of package '{}' was published on '{}' after the attack date ({}), it may be vulnerable.",
-                            ver, package_name, version_created, ATTACK_DATE
+                            ver, pkg_key, version_created, ATTACK_DATE
                         );
                         maybe_vulnerable = true;
                         break;
                     } else {
                         println!(
                             "\t✅ Version '{}' of package '{}' was published on '{}' before the attack date ({}), it is not vulnerable.",
-                            ver, package_name, version_created, ATTACK_DATE
+                            ver, pkg_key, version_created, ATTACK_DATE
                         );
                     }
                 }
 
                 if maybe_vulnerable {
                     let mut pkgs = packages_clone.lock().await;
-                    if let Some(value) = pkgs.remove(&package_name) {
+                    if let Some(value) = pkgs.remove(&pkg_key) {
                         let mut vuln_pkgs = possibly_vulnerable_clone.lock().await;
-                        vuln_pkgs.packages.insert(package_name.clone(), value);
+                        vuln_pkgs.packages.insert(pkg_key.clone(), value);
                     }
                 }
             }
@@ -110,16 +104,19 @@ pub async fn check_possible_vulnerable_packages(
         task.await;
     }
 
-    // Restore packages (minus the vulnerable ones)
-    packages.packages = Arc::try_unwrap(packages_arc).unwrap().into_inner();
+    // Return both remaining packages and vulnerable packages
+    let remaining_packages = NpmLockPackages {
+        packages: Arc::try_unwrap(packages_arc).unwrap().into_inner(),
+    };
+    let vulnerable_packages = Arc::try_unwrap(possibly_vulnerable).unwrap().into_inner();
 
-    Arc::try_unwrap(possibly_vulnerable).unwrap().into_inner()
+    (remaining_packages, vulnerable_packages)
 }
 
 pub fn check_vulnerable_packages(
     vulnerabilities: &HashMap<String, Vec<String>>,
-    packages: &mut NpmLockPackages,
-) -> NpmLockPackages {
+    mut packages: NpmLockPackages,
+) -> (NpmLockPackages, NpmLockPackages) {
     let mut vulnerable_packages = NpmLockPackages::new();
     for (vuln_package, vuln_versions) in vulnerabilities.iter() {
         println!("\n----------------------------------------");
@@ -151,5 +148,5 @@ pub fn check_vulnerable_packages(
         }
     }
 
-    vulnerable_packages
+    (packages, vulnerable_packages)
 }
